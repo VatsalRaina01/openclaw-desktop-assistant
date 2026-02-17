@@ -331,7 +331,14 @@ async function runTrendingAgent() {
                     'could', 'it', 'them', 'this', 'these', 'those', 'to', 'for', 'in', 'at', 'of',
                     'by', 'with', 'into', 'some', 'is', 'are', 'was', 'were', 'be', 'been', 'do', 'does',
                     'did', 'top', 'ten', 'best', 'latest', 'can', 'who', 'what', 'how', 'i', 'me', 'we',
-                    'you', 'he', 'she', 'they', 'an', 'has', 'have', 'had'
+                    'you', 'he', 'she', 'they', 'an', 'has', 'have', 'had',
+                    // Profile/experience instruction words
+                    'past', 'experiences', 'experience', 'information', 'details', 'detail', 'profile',
+                    'work', 'highlight', 'highlights', 'show', 'tell', 'get', 'check', 'recent', 'current',
+                    'background', 'history', 'career', 'resume', 'bio', 'summary', 'info', 'data',
+                    'all', 'list', 'give', 'me', 'need', 'want', 'know', 'see', 'just', 'only',
+                    'skills', 'skill', 'education', 'qualifications', 'posts', 'activity', 'feed',
+                    'using', 'use', 'via', 'through', 'go', 'visit', 'open', 'navigate'
                 ]);
                 const customSearchQuery = hasCustomGoal
                     ? customGoal.split(/\s+/).filter(w => !STOP_WORDS.has(w.toLowerCase())).join(' ').trim()
