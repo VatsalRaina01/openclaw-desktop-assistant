@@ -228,19 +228,52 @@ function ChatView() {
 
                 if (agentToRun) {
                     addLog("info", `Chat Trigger: Executing ${agentToRun.name}`, "chat-command");
-                    invoke('execute_script', { scriptPath: 'automation/linkedin_agent.js', taskGoal: agentToRun.goal })
-                        .then((res) => {
-                            if (res.success) {
-                                addLog("success", `Agent "${agentToRun.name}" started successfully`, "agent-manager");
-                                addToast(`Started "${agentToRun.name}"`, "success");
-                            } else {
-                                addLog("error", `Execution failed: ${res.stderr}`, "agent-manager");
-                            }
-                        })
-                        .catch((err) => {
-                            console.error("Exec failed", err);
-                            addLog("error", `Command Failed: ${err}`, "agent-manager");
-                        });
+
+                    // Check for Tauri environment
+                    if (window.__TAURI_INTERNALS__) {
+                        invoke('execute_script', { scriptPath: '../automation/linkedin_agent.js', taskGoal: agentToRun.goal })
+                            .then((res) => {
+                                if (res.success) {
+                                    addLog("success", `Agent Execution Output:\n${res.stdout}`, "agent-manager");
+                                    addToast(`Agent "${agentToRun.name}" finished successfully`, "success");
+
+                                    // Send result to chat
+                                    const resultMsg = {
+                                        id: uuidv4(),
+                                        role: "assistant",
+                                        content: `✅ **Agent Finished!**\n\nHere is the result:\n\`\`\`\n${res.stdout.split('\n').filter(l => l.includes('✅') || l.includes('Found') || l.includes('Detected')).join('\n')}\n\`\`\`\n\n(Full output available in Logs tab)`,
+                                        timestamp: new Date().toISOString(),
+                                    };
+                                    dispatch({ type: "ADD_MESSAGE", payload: resultMsg });
+
+                                } else {
+                                    addLog("error", `Execution failed: ${res.stderr}`, "agent-manager");
+                                    addToast(`Agent execution failed`, "error");
+
+                                    const errorMsg = {
+                                        id: uuidv4(),
+                                        role: "assistant",
+                                        content: `❌ **Agent Failed**\n\nError: ${res.stderr}`,
+                                        timestamp: new Date().toISOString(),
+                                    };
+                                    dispatch({ type: "ADD_MESSAGE", payload: errorMsg });
+                                }
+                            })
+                            .catch((err) => {
+                                console.error("Exec failed", err);
+                                addLog("error", `Command Failed: ${err}`, "agent-manager");
+                            });
+                    } else {
+                        // Browser Fallback
+                        addToast("Agent execution requires Desktop App 🖥️", "warning");
+                        const browserMsg = {
+                            id: uuidv4(),
+                            role: "assistant", // Using system or assistant role
+                            content: `⚠️ **Browser Mode Detected**\n\nI cannot run the agent script (` + agentToRun.name + `) directly from the browser because it requires system access (Node.js/Puppeteer).\n\nPlease open this app in **Tauri (Desktop Mode)** to run automation agents.`,
+                            timestamp: new Date().toISOString(),
+                        };
+                        dispatch({ type: "ADD_MESSAGE", payload: browserMsg });
+                    }
                 } else {
                     addToast(`Agent matching "${targetName}" not found`, "warning");
                 }
@@ -460,7 +493,7 @@ function ChatView() {
                             <div style={{ display: "flex", gap: "12px", marginTop: "8px" }}>
                                 <button
                                     className="btn btn-primary btn-sm"
-                                    onClick={() => handleSend("Approve and create agent")}
+                                    onClick={() => handleSend("Approve agent creation")}
                                     style={{ flex: 1 }}
                                 >
                                     ✅ Approve & Create

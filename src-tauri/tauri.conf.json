@@ -9,7 +9,6 @@
         "frontendDist": "../dist"
     },
     "app": {
-        "title": "OpenClaw Desktop Assistant",
         "windows": [
             {
                 "title": "OpenClaw Desktop Assistant",

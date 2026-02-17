@@ -134,9 +134,6 @@ fn send_agent_message(message: String) -> CommandResult {
 #[tauri::command]
 fn execute_script(script_path: String, task_goal: Option<String>) -> CommandResult {
     // SECURITY NOTE: In a real app, validate script_path to prevent arbitrary execution
-    // For this prototype, we assume the frontend sends a safe relative path
-    let mut args = vec![script_path.as_str()];
-    
     // We need to keep the goal string alive if we want to reference it, 
     // but building the vector of &str is tricky if we own the String.
     // Easier approach: construct the command arguments completely.

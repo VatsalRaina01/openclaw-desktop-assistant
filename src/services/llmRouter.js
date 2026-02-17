@@ -107,24 +107,35 @@ function detectIntent(message) {
         return "greeting";
     }
 
+    // Approval (High priority to catch confirmation flows)
+    if (/^(yes|yeah|yep|sure|ok|okay|accept|approve|confirm|go ahead|do it|create it|post it|ship it|let'?s go|absolutely|definitely)/i.test(lower)) {
+        return "approve";
+    }
+    if (/^(no|reject|cancel|don'?t|stop)/i.test(lower)) {
+        return "reject";
+    }
+
+    // Run/Execute Agent (High priority relative to creation)
+    if (/^(run|start|execute|launch|trigger)\b/i.test(lower) && !/setup|install|config/i.test(lower)) {
+        return "agent_run";
+    }
+
     // Create agent (Higher priority to catch "set up an agent")
     if (/create.*agent|make.*agent|new agent|build.*agent|set.?up.*agent/i.test(lower)) {
-        // Run/Execute Agent (Corner Case - Expanded)
-        // Catches "Run News Monitor", "Start Job Hunter", "Execute Agent X"
-        if (/^(run|start|execute|launch|trigger)\b/i.test(lower) && !/setup|install|config/i.test(lower)) {
-            return "agent_run";
+        // RULE: If the message is long/detailed (>80 chars), the user has a specific goal
+        // Always use the smart builder to preserve their exact request
+        const isDetailedGoal = lower.length > 80;
+
+        if (!isDetailedGoal) {
+            // Short/generic requests → use hardcoded templates
+            if (/trending.*linkedin|linkedin.*trending/i.test(lower)) return "agent_trending";
+            if (/\bjob\b|\bhiring\b|\bcareer\b/i.test(lower)) return "agent_job_scraper";
+            if (/hashtag.*comment|comment.*#|#openclaw/i.test(lower)) return "agent_hashtag";
         }
 
-        // Expanded Agent Types
-        if (/trend|linkedin.*post|daily.*post/i.test(lower)) return "agent_trending";
-        if (/job|scrape|career|hiring|work/i.test(lower)) return "agent_job_scraper";
-
-        if (/news|update|headlin/i.test(lower)) return "agent_news";
-        if (/video|youtube|watch|clip/i.test(lower)) return "agent_video";
-        if (/stock|price|market|finance/i.test(lower)) return "agent_finance";
-
-        if (/hashtag|comment|#openclaw|promot/i.test(lower)) return "agent_hashtag";
-        return "agent_generic"; // Fallback to generic creation
+        // ALL detailed or unmatched requests → smart generic creation
+        // This ensures the user's actual goal is preserved
+        return "agent_generic";
     }
 
     // Setup
@@ -132,10 +143,10 @@ function detectIntent(message) {
         return "setup";
     }
 
-    // Agent-related
+    // Agent-related (only for short/vague messages like "tell me about agents")
     if (/agent|automat/i.test(lower)) {
-        if (/trend/i.test(lower)) return "agent_trending";
-        if (/hashtag|comment|#/i.test(lower)) return "agent_hashtag";
+        if (lower.length < 50 && /trend/i.test(lower)) return "agent_trending";
+        if (lower.length < 50 && /hashtag|comment|#/i.test(lower)) return "agent_hashtag";
         return "agent_help";
     }
 
@@ -149,14 +160,6 @@ function detectIntent(message) {
         if (/enable|on|start|activate/i.test(lower)) return "sandbox_enable";
         if (/disable|off|stop|deactivate/i.test(lower)) return "sandbox_disable";
         return "sandbox_explain";
-    }
-
-    // Approval
-    if (/^(yes|approve|confirm|go ahead|do it|post it|ship it)/i.test(lower)) {
-        return "approve";
-    }
-    if (/^(no|reject|cancel|don'?t|stop)/i.test(lower)) {
-        return "reject";
     }
 
     // Help
@@ -231,17 +234,54 @@ function generateLocalResponse(message, context = {}) {
         case "agent_finance":
             return `📈 **Finance Agent**\n\nI can track stock prices and market trends.\n\n| Setting | Value |\n|---------|-------|\n| **Name** | Market Tracker |\n| **Goal** | Monitor stock prices for [User Ticker] |\n| **Tools** | Google Finance |\n\nShall I set this up?\n\n<<AGENT_CONFIG>>\n{\n  "name": "Market Tracker",\n  "role": "Financial Analyst",\n  "goal": "Search Google Finance for stock prices and market trends",\n  "tools": ["browser", "google_finance"],\n  "schedule": "0 9 * * 1-5"\n}\n<<END_AGENT_CONFIG>>`;
 
-        case "agent_run":
+        case "agent_run": {
             // Extract agent name roughly
             const runTarget = message.replace(/run|start|execute|launch|the|agent/gi, "").trim();
             return `🚀 **Starting Agent**\n\nI am initiating the execution sequence for **"${runTarget || "selected agent"}"**.\n\nCheck the **Logs** tab for real-time progress.`;
+        }
 
-        case "agent_generic":
-            // Extract a rough goal from the message
-            const goal = message.replace(/create.*agent|make.*agent|set.?up.*agent/i, "").trim() || "Automate tasks based on user instruction";
-            const safeGoal = goal.replace(/"/g, "'"); // Sanitize for JSON
+        case "agent_generic": {
+            // SMART AGENT BUILDER — extracts goal, tools, schedule, name from user message
+            const rawGoal = message.replace(/create.*agent|make.*agent|set.?up.*agent|build.*agent|that|which|to|please/gi, "").trim() || "Automate tasks based on user instruction";
+            const safeGoal = rawGoal.replace(/"/g, "'");
+            const goalLower = rawGoal.toLowerCase();
 
-            return `🤖 **Agent Configuration: Custom Agent**\n\nI've designed a custom agent for your request:\n\n| Setting | Value |\n|---------|-------|\n| **Name** | Custom Automation Agent |\n| **Goal** | ${safeGoal} |\n| **Tools** | Browser, General |\n| **Schedule** | Manual |\n\nShall I create this agent?\n\n<<AGENT_CONFIG>>\n{\n  "name": "Custom Automation Agent",\n  "role": "Custom Assistant",\n  "goal": "${safeGoal}",\n  "tools": ["browser"],\n  "schedule": "manual"\n}\n<<END_AGENT_CONFIG>>`;
+            // Auto-detect tools from goal keywords
+            const autoTools = ["browser"];
+            if (/linkedin|post|connect|engage/i.test(goalLower)) autoTools.push("linkedin");
+            if (/search|find|scrape|google|look/i.test(goalLower)) autoTools.push("search");
+            if (/scrape|extract|collect|gather|data/i.test(goalLower)) autoTools.push("scraper");
+            if (/youtube|video/i.test(goalLower)) autoTools.push("youtube");
+            if (/news|headline/i.test(goalLower)) autoTools.push("google_news");
+            if (/email|outreach|message/i.test(goalLower)) autoTools.push("email");
+            if (/monitor|track|competitor/i.test(goalLower)) autoTools.push("monitor");
+
+            // Auto-detect schedule from goal keywords
+            let autoSchedule = "manual";
+            let autoTrigger = "manual";
+            if (/every\s*hour|hourly/i.test(goalLower)) { autoSchedule = "0 * * * *"; autoTrigger = "hourly"; }
+            else if (/daily|every\s*day|each\s*day/i.test(goalLower)) { autoSchedule = "0 9 * * *"; autoTrigger = "daily"; }
+            else if (/weekly|every\s*week/i.test(goalLower)) { autoSchedule = "0 9 * * 1"; autoTrigger = "weekly"; }
+
+            // Auto-detect role from goal keywords
+            let autoRole = "Custom Assistant";
+            if (/post|content|write|publish|blog/i.test(goalLower)) autoRole = "Content Creator";
+            else if (/scrape|extract|collect|data/i.test(goalLower)) autoRole = "Data Collector";
+            else if (/monitor|track|competitor|analyze/i.test(goalLower)) autoRole = "Research Analyst";
+            else if (/comment|engage|reply|like/i.test(goalLower)) autoRole = "Community Promoter";
+            else if (/job|career|hiring/i.test(goalLower)) autoRole = "Career Assistant";
+            else if (/news|headline|update/i.test(goalLower)) autoRole = "News Aggregator";
+            else if (/email|outreach|connect/i.test(goalLower)) autoRole = "Outreach Specialist";
+
+            // Auto-generate a descriptive name from the first few words
+            const nameWords = rawGoal.split(/\s+/).slice(0, 5).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+            const autoName = nameWords.length > 3 ? nameWords + " Agent" : "Custom Automation Agent";
+
+            const toolsDisplay = autoTools.map(t => t.charAt(0).toUpperCase() + t.slice(1)).join(", ");
+            const scheduleDisplay = autoSchedule === "manual" ? "Manual" : `${autoTrigger.charAt(0).toUpperCase() + autoTrigger.slice(1)} (${autoSchedule})`;
+
+            return `🤖 **Agent Configuration: ${autoName}**\n\nI've designed a custom agent for your request:\n\n| Setting | Value |\n|---------|-------|\n| **Name** | ${autoName} |\n| **Role** | ${autoRole} |\n| **Goal** | ${safeGoal} |\n| **Tools** | ${toolsDisplay} |\n| **Schedule** | ${scheduleDisplay} |\n\nShall I create this agent?\n\n<<AGENT_CONFIG>>\n{\n  "name": "${autoName}",\n  "role": "${autoRole}",\n  "goal": "${safeGoal}",\n  "tools": ${JSON.stringify(autoTools)},\n  "schedule": "${autoSchedule}",\n  "eventTrigger": "${autoTrigger}"\n}\n<<END_AGENT_CONFIG>>`;
+        }
 
         case "approve":
             return "✅ **Approved!** The action has been queued for execution. Check the **Logs** tab for real-time progress.\n\nI'll notify you when it's complete.";
