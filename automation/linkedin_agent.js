@@ -401,7 +401,7 @@ async function runTrendingAgent() {
 
                             if (profileClicked) {
                                 console.log(`✅ Clicked on profile: ${profileClicked}`);
-                                await new Promise(r => setTimeout(r, 4000)); // Wait for profile to load
+                                await new Promise(r => setTimeout(r, 4000));
 
                                 // Extract profile data
                                 console.log("📋 Extracting profile information...");
